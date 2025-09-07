@@ -89,7 +89,7 @@
 
       textarea {
         width: 100%;
-        min-height: 160px;
+        min-height: 56px;
         background: #0e1526;
         color: var(--text);
         border: 1px solid var(--border);
@@ -147,7 +147,7 @@
         <div class="hint">
           Expected input: either a single series like [[ts,value,""]] or an array of 3 series.
         </div>
-        <textarea id="dataInput" spellcheck="false" placeholder="Paste JSON here...">[
+        <textarea id="dataInput" spellcheck="false" placeholder="Paste JSON here..." rows="2">[
   [
     [1721748600000, 597, ""],
     [1755876600000, 818, ""],
@@ -200,7 +200,7 @@
 
       <div class="panel" style="height: 260px;">
         <div class="stacked-row">
-          <div class="hint">Counts per period</div>
+          <div class="hint">Playing activity</div>
           <div class="range-buttons" id="periodButtons">
             <span class="hint">Period:</span>
             <button class="range-btn" data-period="year">Year</button>
@@ -397,7 +397,6 @@
                 pan: {
                   enabled: true,
                   mode: 'x',
-                  modifierKey: 'shift', // Hold Shift to pan so scroll zoom feels natural
                   onPanComplete: ({chart}) => {
                     const s = chart.scales.x;
                     if (s && s.min != null && s.max != null) setLinkedRange(s.min, s.max);
@@ -712,7 +711,7 @@
             data: {
               datasets: [
                 {
-                  label: 'Datapoints',
+                  label: '',
                   data: dataPoints,
                   borderColor: 'rgba(34, 197, 94, 0.9)',
                   backgroundColor: 'rgba(34, 197, 94, 0.25)',
@@ -743,7 +742,7 @@
                 },
               },
               plugins: {
-                legend: { labels: { color: '#e5e7eb' } },
+                legend: { display: false },
                 tooltip: {
                   callbacks: {
                     label: (ctx) => `Count: ${ctx.parsed.y}`,
