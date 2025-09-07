@@ -171,20 +171,19 @@
   ]
 ]</textarea>
         <div class="controls">
-          <button id="renderBtn">Render chart</button>
-          <button id="resetZoomBtn" class="secondary">Reset zoom</button>
-          <span class="hint">Scroll to zoom • Drag, pinch, or hold Shift to pan</span>
-          <div class="range-buttons" id="rangeButtons">
-            <span class="hint">Filter:</span>
-            <button class="range-btn" data-range="1m">1m</button>
-            <button class="range-btn" data-range="3m">3m</button>
-            <button class="range-btn" data-range="6m">6m</button>
-            <button class="range-btn" data-range="ytd">YTD</button>
-            <button class="range-btn" data-range="1y">1y</button>
-            <button class="range-btn active" data-range="all">All</button>
-          </div>
-          <div class="range-buttons" id="seriesToggles">
-            <span class="hint">Series:</span>
+          <div class="stacked-row" style="width:100%;">
+            <div class="range-buttons" id="seriesToggles">
+              <span class="hint">Series:</span>
+            </div>
+            <div class="range-buttons" id="rangeButtons">
+              <span class="hint">Filter:</span>
+              <button class="range-btn" data-range="1m">1m</button>
+              <button class="range-btn" data-range="3m">3m</button>
+              <button class="range-btn" data-range="6m">6m</button>
+              <button class="range-btn" data-range="ytd">YTD</button>
+              <button class="range-btn" data-range="1y">1y</button>
+              <button class="range-btn active" data-range="all">All</button>
+            </div>
           </div>
         </div>
         <div id="errorBox" class="error"></div>
@@ -222,8 +221,8 @@
     <script>
       const input = document.getElementById('dataInput');
       const errorBox = document.getElementById('errorBox');
-      const renderBtn = document.getElementById('renderBtn');
-      const resetZoomBtn = document.getElementById('resetZoomBtn');
+      
+      
       const rangeButtons = document.getElementById('rangeButtons');
       const seriesToggles = document.getElementById('seriesToggles');
       const ctx = document.getElementById('chartCanvas').getContext('2d');
@@ -491,7 +490,7 @@
         seriesToggles.querySelectorAll('button[data-series-index]').forEach(b => b.remove());
         labels.forEach((label, i) => {
           const btn = document.createElement('button');
-          btn.className = 'range-btn active';
+          btn.className = 'range-btn' + (seriesVisibility[i] ? ' active' : '');
           btn.setAttribute('data-series-index', String(i));
           btn.textContent = label;
           seriesToggles.appendChild(btn);
@@ -503,7 +502,8 @@
         try {
           const seriesList = parseInput(input.value);
           rawSeries = seriesList;
-          seriesVisibility = seriesList.map(() => true);
+          // Show only first series by default
+          seriesVisibility = seriesList.map((_, i) => i === 0);
           buildSeriesToggles(seriesList.map((_, i) => seriesLabels[i] || `Series ${i + 1}`));
           renderChart(seriesList);
           updateCountChart();
@@ -514,27 +514,19 @@
 
       
 
-      renderBtn.addEventListener('click', handleRender);
-      resetZoomBtn.addEventListener('click', () => {
-        if (chart) {
-          if (chart.resetZoom) chart.resetZoom();
-          if (chart.options && chart.options.scales && chart.options.scales.x) {
-            delete chart.options.scales.x.min;
-            delete chart.options.scales.x.max;
-          }
-          
-          if (miniChart && miniChart.options && miniChart.options.scales && miniChart.options.scales.x) {
-            delete miniChart.options.scales.x.min;
-            delete miniChart.options.scales.x.max;
-          }
-          chart.update('none');
-          if (miniChart) miniChart.update('none');
-          // update active state on range buttons
-          setActiveRangeButton('all');
-          currentRange = { min: undefined, max: undefined };
-          updateCountChart();
-        }
-      });
+      
+      if (input) {
+        input.addEventListener('focus', () => {
+          input.value = '';
+        });
+        input.addEventListener('paste', () => {
+          setTimeout(() => {
+            handleRender();
+            input.blur();
+          }, 0);
+        });
+      }
+      
       
 
       function setLinkedRange(min, max) {
