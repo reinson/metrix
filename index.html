@@ -1,0 +1,818 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Metrix Chart - Paste Data to Plot</title>
+    <style>
+      :root {
+        --bg: #0b1020;
+        --panel: #121a2b;
+        --text: #e5e7eb;
+        --muted: #9ca3af;
+        --brand: #3b82f6;
+        --brand-weak: rgba(59, 130, 246, 0.18);
+        --border: #1f2a44;
+      }
+
+      html, body {
+        height: 100%;
+        background: var(--bg);
+        color: var(--text);
+        margin: 0;
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI,
+          Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica Neue, Arial,
+          "Apple Color Emoji", "Segoe UI Emoji";
+      }
+
+      .container {
+        max-width: 1100px;
+        margin: 0 auto;
+        padding: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+
+      h1 {
+        font-size: 20px;
+        font-weight: 600;
+        margin: 8px 0 0 0;
+        color: var(--text);
+      }
+
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 14px;
+      }
+
+      .controls {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        align-items: center;
+        margin-top: 8px;
+      }
+
+      
+
+      .range-buttons {
+        display: inline-flex;
+        gap: 6px;
+        align-items: center;
+      }
+      .range-buttons .range-btn {
+        background: transparent;
+        color: var(--text);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 6px 10px;
+        cursor: pointer;
+        font-size: 12px;
+      }
+      .range-buttons .range-btn.active {
+        background: var(--brand);
+        color: #fff;
+        border-color: var(--brand);
+      }
+
+      .stacked-row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        margin-bottom: 8px;
+      }
+
+      textarea {
+        width: 100%;
+        min-height: 160px;
+        background: #0e1526;
+        color: var(--text);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 10px 12px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+          "Liberation Mono", "Courier New", monospace;
+        font-size: 12px;
+        line-height: 1.5;
+        resize: vertical;
+      }
+
+      button {
+        background: var(--brand);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        padding: 10px 14px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+
+      button.secondary {
+        background: transparent;
+        color: var(--text);
+        border: 1px solid var(--border);
+      }
+
+      .hint {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .error {
+        color: #fecaca;
+        background: #7f1d1d;
+        border: 1px solid #ef4444;
+        padding: 8px 10px;
+        border-radius: 8px;
+        display: none;
+      }
+
+      .chart-wrap {
+        height: 520px;
+      }
+
+      /* Chart sizing is controlled via the container and Chart.js maintainAspectRatio=false */
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>Paste data to plot a time series</h1>
+
+      <div class="panel">
+        <div class="hint">
+          Expected input: either a single series like [[ts,value,""]] or an array of 3 series.
+        </div>
+        <textarea id="dataInput" spellcheck="false" placeholder="Paste JSON here...">[
+  [
+    [1721748600000, 597, ""],
+    [1755876600000, 818, ""],
+    [1756135800000, 781, ""],
+    [1756481400000, 801, ""],
+    [1756739700000, 814, ""]
+  ],
+  [
+    [1721748600000, 597, ""],
+    [1755876600000, 818, ""],
+    [1756135800000, 781, ""],
+    [1756481400000, 801, ""],
+    [1756739700000, 814, ""]
+  ],
+  [
+    [1721748600000, 597, ""],
+    [1755876600000, 818, ""],
+    [1756135800000, 743, ""],
+    [1756481400000, 842, ""],
+    [1756739700000, 851, ""]
+  ]
+]</textarea>
+        <div class="controls">
+          <button id="renderBtn">Render chart</button>
+          <button id="resetZoomBtn" class="secondary">Reset zoom</button>
+          <span class="hint">Scroll to zoom • Drag, pinch, or hold Shift to pan</span>
+          <div class="range-buttons" id="rangeButtons">
+            <span class="hint">Filter:</span>
+            <button class="range-btn" data-range="1m">1m</button>
+            <button class="range-btn" data-range="3m">3m</button>
+            <button class="range-btn" data-range="6m">6m</button>
+            <button class="range-btn" data-range="ytd">YTD</button>
+            <button class="range-btn" data-range="1y">1y</button>
+            <button class="range-btn active" data-range="all">All</button>
+          </div>
+          <div class="range-buttons" id="seriesToggles">
+            <span class="hint">Series:</span>
+          </div>
+        </div>
+        <div id="errorBox" class="error"></div>
+      </div>
+
+      <div class="panel chart-wrap">
+        <canvas id="chartCanvas"></canvas>
+      </div>
+
+      <div class="panel" style="height: 140px;">
+        <div class="hint" style="margin-bottom:6px;">Navigator — drag to select a time window</div>
+        <canvas id="navCanvas" style="height: 100%;"></canvas>
+      </div>
+
+      <div class="panel" style="height: 260px;">
+        <div class="stacked-row">
+          <div class="hint">Counts per period</div>
+          <div class="range-buttons" id="periodButtons">
+            <span class="hint">Period:</span>
+            <button class="range-btn" data-period="year">Year</button>
+            <button class="range-btn active" data-period="month">Month</button>
+            <button class="range-btn" data-period="week">Week</button>
+            <button class="range-btn" data-period="day">Day</button>
+          </div>
+        </div>
+        <canvas id="countCanvas" style="height: 100%;"></canvas>
+      </div>
+    </div>
+
+    <!-- Chart.js + date adapter + zoom plugin -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2"></script>
+
+    <script>
+      const input = document.getElementById('dataInput');
+      const errorBox = document.getElementById('errorBox');
+      const renderBtn = document.getElementById('renderBtn');
+      const resetZoomBtn = document.getElementById('resetZoomBtn');
+      const rangeButtons = document.getElementById('rangeButtons');
+      const seriesToggles = document.getElementById('seriesToggles');
+      const ctx = document.getElementById('chartCanvas').getContext('2d');
+      const navCtx = document.getElementById('navCanvas').getContext('2d');
+      const periodButtons = document.getElementById('periodButtons');
+      const countCtx = document.getElementById('countCanvas')?.getContext('2d');
+
+      /** @type {Chart | null} */
+      let chart = null;
+      /** @type {Chart | null} */
+      let miniChart = null;
+      /** @type {Chart | null} */
+      let countChart = null;
+
+      /** @type {{x:number,y:number}[][]} */
+      let rawSeries = [];
+      /** @type {boolean[]} */
+      let seriesVisibility = [];
+      /** @type {string[]} */
+      let seriesLabels = ['Quick rating', 'Metrix rating', 'Course based rating'];
+      let countPeriodKey = 'month';
+      let currentRange = { min: undefined, max: undefined };
+
+      function showError(message) {
+        errorBox.textContent = message;
+        errorBox.style.display = 'block';
+      }
+
+      function clearError() {
+        errorBox.textContent = '';
+        errorBox.style.display = 'none';
+      }
+
+      function parseInput(text) {
+        let raw;
+        try {
+          raw = JSON.parse(text);
+        } catch (e) {
+          throw new Error('Invalid JSON. Ensure your input is valid JSON.');
+        }
+
+        if (!Array.isArray(raw)) {
+          throw new Error('Expected a top-level JSON array.');
+        }
+
+        const isMultiSeries = Array.isArray(raw[0]) && Array.isArray(raw[0][0]);
+        /** @type {{x:number,y:number}[][]} */
+        let seriesList = [];
+
+        if (isMultiSeries) {
+          seriesList = raw.slice(0, 3).map((series, sIdx) => {
+            if (!Array.isArray(series)) {
+              throw new Error(`Series ${sIdx + 1} is not an array.`);
+            }
+            const points = series.map((row, index) => {
+              if (!Array.isArray(row) || row.length < 2) {
+                throw new Error(`Series ${sIdx + 1}, row ${index + 1} must be [timestampMillis, value, ...]`);
+              }
+              const timestamp = Number(row[0]);
+              const value = Number(row[1]);
+              if (!Number.isFinite(timestamp) || !Number.isFinite(value)) {
+                throw new Error(`Series ${sIdx + 1}, row ${index + 1} has non-numeric timestamp or value.`);
+              }
+              return { x: timestamp, y: value };
+            });
+            points.sort((a, b) => a.x - b.x);
+            return points;
+          });
+        } else {
+          const points = raw.map((row, index) => {
+            if (!Array.isArray(row) || row.length < 2) {
+              throw new Error(`Row ${index + 1} must be an array like [timestampMillis, value, ...]`);
+            }
+            const timestamp = Number(row[0]);
+            const value = Number(row[1]);
+            if (!Number.isFinite(timestamp) || !Number.isFinite(value)) {
+              throw new Error(`Row ${index + 1} has non-numeric timestamp or value.`);
+            }
+            return { x: timestamp, y: value };
+          });
+          points.sort((a, b) => a.x - b.x);
+          seriesList = [points];
+        }
+
+        return seriesList;
+      }
+
+      function renderChart(seriesList) {
+        if (chart) {
+          chart.destroy();
+        }
+
+        const colors = [
+          { border: getComputedStyle(document.documentElement).getPropertyValue('--brand').trim() || '#3b82f6', background: getComputedStyle(document.documentElement).getPropertyValue('--brand-weak').trim() || 'rgba(59, 130, 246, 0.2)' },
+          { border: 'rgba(34, 197, 94, 1)', background: 'rgba(34, 197, 94, 0.25)' },
+          { border: 'rgba(167, 139, 250, 1)', background: 'rgba(167, 139, 250, 0.25)' },
+        ];
+
+        const datasets = seriesList.map((points, i) => ({
+          label: seriesLabels[i] || `Series ${i + 1}`,
+          data: points,
+          borderColor: colors[i % colors.length].border,
+          backgroundColor: colors[i % colors.length].background,
+          pointRadius: 1.6,
+          pointHoverRadius: 3,
+          borderWidth: 2,
+          tension: 0,
+          fill: true,
+          hidden: seriesVisibility[i] === false ? true : false,
+        }));
+
+        chart = new Chart(ctx, {
+          type: 'line',
+          data: {
+            datasets,
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: false,
+            parsing: false,
+            normalized: true,
+            scales: {
+              x: {
+                type: 'time',
+                time: {
+                  // Let the adapter auto-detect the best unit
+                },
+                grid: { color: 'rgba(255,255,255,0.06)' },
+                ticks: { color: '#cbd5e1' },
+              },
+              y: {
+                beginAtZero: false,
+                grid: { color: 'rgba(255,255,255,0.06)' },
+                ticks: { color: '#cbd5e1' },
+              },
+            },
+            plugins: {
+              legend: {
+                labels: { color: '#e5e7eb' },
+                onClick: (e, legendItem, legend) => {
+                  const idx = legendItem.datasetIndex;
+                  if (typeof idx !== 'number') return;
+                  seriesVisibility[idx] = !seriesVisibility[idx];
+                  const btn = seriesToggles && seriesToggles.querySelector && seriesToggles.querySelector(`button[data-series-index="${idx}"]`);
+                  if (btn) {
+                    if (seriesVisibility[idx]) btn.classList.add('active'); else btn.classList.remove('active');
+                  }
+                  if (chart && chart.data && chart.data.datasets[idx]) {
+                    chart.data.datasets[idx].hidden = !seriesVisibility[idx];
+                  }
+                  if (miniChart && miniChart.data && miniChart.data.datasets[idx]) {
+                    miniChart.data.datasets[idx].hidden = !seriesVisibility[idx];
+                  }
+                  if (chart) chart.update('none');
+                  if (miniChart) miniChart.update('none');
+                  updateCountChart(currentRange.min, currentRange.max);
+                },
+              },
+              tooltip: {
+                mode: 'index',
+                intersect: false,
+                callbacks: {
+                  label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y}`,
+                },
+              },
+              zoom: {
+                limits: {
+                  x: { min: 'original', max: 'original' },
+                  y: { min: 'original', max: 'original' },
+                },
+                pan: {
+                  enabled: true,
+                  mode: 'x',
+                  modifierKey: 'shift', // Hold Shift to pan so scroll zoom feels natural
+                  onPanComplete: ({chart}) => {
+                    const s = chart.scales.x;
+                    if (s && s.min != null && s.max != null) setLinkedRange(s.min, s.max);
+                  },
+                },
+                zoom: {
+                  wheel: { enabled: true, speed: 0.02 },
+                  pinch: { enabled: true },
+                  drag: { enabled: false },
+                  mode: 'x',
+                  onZoomComplete: ({chart}) => {
+                    const s = chart.scales.x;
+                    if (s && s.min != null && s.max != null) setLinkedRange(s.min, s.max);
+                  },
+                },
+              },
+            },
+          },
+        });
+
+        // store base X domain for slider-driven zooming
+        const allPoints = seriesList.flat();
+        const baseMin = allPoints.length ? Math.min(...allPoints.map(p => p.x)) : undefined;
+        const baseMax = allPoints.length ? Math.max(...allPoints.map(p => p.x)) : undefined;
+        chart.$baseX = { min: baseMin, max: baseMax };
+        
+
+        // (Re)build mini navigator chart
+        if (miniChart) miniChart.destroy();
+        miniChart = new Chart(navCtx, {
+          type: 'line',
+          data: {
+            datasets: seriesList.map((points, i) => ({
+              label: seriesLabels[i] || `Series ${i + 1}`,
+              data: points,
+              borderColor: 'rgba(148, 163, 184, 0.9)',
+              backgroundColor: 'rgba(148, 163, 184, 0.25)',
+              borderWidth: 1,
+              pointRadius: 0,
+              tension: 0,
+              fill: true,
+              hidden: seriesVisibility[i] === false ? true : false,
+            })),
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: false,
+            parsing: false,
+            normalized: true,
+            scales: {
+              x: {
+                type: 'time',
+                grid: { color: 'rgba(255,255,255,0.05)' },
+                ticks: { color: '#94a3b8' },
+              },
+              y: {
+                display: false,
+              },
+            },
+            plugins: {
+              legend: { display: false },
+              tooltip: { enabled: false },
+              zoom: {
+                pan: { enabled: false },
+                zoom: {
+                  mode: 'x',
+                  wheel: { enabled: false },
+                  pinch: { enabled: false },
+                  drag: {
+                    enabled: true,
+                    backgroundColor: 'rgba(59, 130, 246, 0.2)',
+                    borderColor: '#3b82f6',
+                    borderWidth: 1,
+                  },
+                  onZoomComplete: ({chart}) => {
+                    const s = chart.scales.x;
+                    if (s && s.min != null && s.max != null) setLinkedRange(s.min, s.max);
+                  },
+                },
+              },
+            },
+          },
+        });
+      }
+
+      function buildSeriesToggles(labels) {
+        if (!seriesToggles) return;
+        // Clear existing
+        seriesToggles.querySelectorAll('button[data-series-index]').forEach(b => b.remove());
+        labels.forEach((label, i) => {
+          const btn = document.createElement('button');
+          btn.className = 'range-btn active';
+          btn.setAttribute('data-series-index', String(i));
+          btn.textContent = label;
+          seriesToggles.appendChild(btn);
+        });
+      }
+
+      function handleRender() {
+        clearError();
+        try {
+          const seriesList = parseInput(input.value);
+          rawSeries = seriesList;
+          seriesVisibility = seriesList.map(() => true);
+          buildSeriesToggles(seriesList.map((_, i) => seriesLabels[i] || `Series ${i + 1}`));
+          renderChart(seriesList);
+          updateCountChart();
+        } catch (err) {
+          showError(err.message || String(err));
+        }
+      }
+
+      
+
+      renderBtn.addEventListener('click', handleRender);
+      resetZoomBtn.addEventListener('click', () => {
+        if (chart) {
+          if (chart.resetZoom) chart.resetZoom();
+          if (chart.options && chart.options.scales && chart.options.scales.x) {
+            delete chart.options.scales.x.min;
+            delete chart.options.scales.x.max;
+          }
+          
+          if (miniChart && miniChart.options && miniChart.options.scales && miniChart.options.scales.x) {
+            delete miniChart.options.scales.x.min;
+            delete miniChart.options.scales.x.max;
+          }
+          chart.update('none');
+          if (miniChart) miniChart.update('none');
+          // update active state on range buttons
+          setActiveRangeButton('all');
+          currentRange = { min: undefined, max: undefined };
+          updateCountChart();
+        }
+      });
+      
+
+      function setLinkedRange(min, max) {
+        if (chart && chart.options && chart.options.scales && chart.options.scales.x) {
+          chart.options.scales.x.min = min;
+          chart.options.scales.x.max = max;
+          chart.update('none');
+        }
+        if (miniChart && miniChart.options && miniChart.options.scales && miniChart.options.scales.x) {
+          miniChart.options.scales.x.min = min;
+          miniChart.options.scales.x.max = max;
+          miniChart.update('none');
+        }
+        currentRange = { min, max };
+        updateCountChart(min, max);
+        setActiveRangeButton(''); // clear active; will be set by preset clicks
+      }
+
+      function setActiveRangeButton(key) {
+        if (!rangeButtons) return;
+        const buttons = rangeButtons.querySelectorAll('.range-btn');
+        buttons.forEach(btn => {
+          const isActive = btn.getAttribute('data-range') === key;
+          if (isActive) btn.classList.add('active'); else btn.classList.remove('active');
+        });
+      }
+
+      function applyPreset(key) {
+        if (!chart || !chart.$baseX) return;
+        const baseMin = chart.$baseX.min;
+        const baseMax = chart.$baseX.max;
+        if (baseMin == null || baseMax == null) return;
+        let min = baseMin;
+        let max = baseMax;
+        const end = new Date(baseMax);
+        const now = new Date();
+        switch (key) {
+          case '1m': {
+            const d = new Date(end);
+            d.setMonth(d.getMonth() - 1);
+            min = Math.max(baseMin, d.getTime());
+            max = baseMax;
+            break;
+          }
+          case '3m': {
+            const d = new Date(end);
+            d.setMonth(d.getMonth() - 3);
+            min = Math.max(baseMin, d.getTime());
+            max = baseMax;
+            break;
+          }
+          case '6m': {
+            const d = new Date(end);
+            d.setMonth(d.getMonth() - 6);
+            min = Math.max(baseMin, d.getTime());
+            max = baseMax;
+            break;
+          }
+          case '1y': {
+            const d = new Date(end);
+            d.setFullYear(d.getFullYear() - 1);
+            min = Math.max(baseMin, d.getTime());
+            max = baseMax;
+            break;
+          }
+          case 'ytd': {
+            const ytdStart = new Date(now.getFullYear(), 0, 1).getTime();
+            min = Math.max(baseMin, ytdStart);
+            max = baseMax;
+            break;
+          }
+          case 'all':
+          default:
+            // clear limits
+            if (chart.options && chart.options.scales && chart.options.scales.x) {
+              delete chart.options.scales.x.min;
+              delete chart.options.scales.x.max;
+            }
+            if (miniChart && miniChart.options && miniChart.options.scales && miniChart.options.scales.x) {
+              delete miniChart.options.scales.x.min;
+              delete miniChart.options.scales.x.max;
+            }
+            
+            if (chart) chart.update('none');
+            if (miniChart) miniChart.update('none');
+            setActiveRangeButton('all');
+            currentRange = { min: undefined, max: undefined };
+            updateCountChart();
+            return;
+        }
+        setLinkedRange(min, max);
+        setActiveRangeButton(key);
+      }
+
+      if (rangeButtons) {
+        rangeButtons.addEventListener('click', (e) => {
+          const t = e.target;
+          if (t && t.matches && t.matches('.range-btn')) {
+            const key = t.getAttribute('data-range');
+            applyPreset(key);
+          }
+        });
+      }
+
+      function startOfPeriod(ms, key) {
+        const d = new Date(ms);
+        if (key === 'year') {
+          return new Date(d.getFullYear(), 0, 1).getTime();
+        }
+        if (key === 'month') {
+          return new Date(d.getFullYear(), d.getMonth(), 1).getTime();
+        }
+        if (key === 'week') {
+          // Monday start
+          const day = d.getDay(); // 0..6 (Sun..Sat)
+          const diff = (day === 0 ? -6 : 1 - day);
+          const monday = new Date(d.getFullYear(), d.getMonth(), d.getDate() + diff);
+          monday.setHours(0,0,0,0);
+          return monday.getTime();
+        }
+        // day
+        return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+      }
+
+      function addPeriod(ms, key) {
+        const d = new Date(ms);
+        if (key === 'year') {
+          return new Date(d.getFullYear() + 1, 0, 1).getTime();
+        }
+        if (key === 'month') {
+          return new Date(d.getFullYear(), d.getMonth() + 1, 1).getTime();
+        }
+        if (key === 'week') {
+          return ms + 7 * 24 * 60 * 60 * 1000;
+        }
+        // day
+        return new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1).getTime();
+      }
+
+      function aggregateCounts(points, key, min, max) {
+        if (!points || points.length === 0) return [];
+        // Determine effective range
+        const rangeMin = (min != null) ? min : points[0].x;
+        const rangeMax = (max != null) ? max : points[points.length - 1].x;
+
+        // Count occurrences per bucket within range
+        const counts = new Map();
+        for (const p of points) {
+          if (p.x < rangeMin || p.x > rangeMax) continue;
+          const bucket = startOfPeriod(p.x, key);
+          counts.set(bucket, (counts.get(bucket) || 0) + 1);
+        }
+
+        // Build contiguous buckets including zeros
+        const start = startOfPeriod(rangeMin, key);
+        const endExclusive = addPeriod(startOfPeriod(rangeMax, key), key);
+        const arr = [];
+        for (let t = start; t < endExclusive; t = addPeriod(t, key)) {
+          arr.push({ x: t, y: counts.get(t) || 0 });
+        }
+        return arr;
+      }
+
+      function updateCountChart(min, max) {
+        if (!rawSeries || rawSeries.length === 0 || !countCtx) return;
+        // Combine only visible series
+        const combined = rawSeries
+          .flatMap((series, i) => (seriesVisibility[i] === false ? [] : series));
+        if (combined.length === 0) {
+          // nothing visible; just clear
+          if (countChart) {
+            countChart.data.datasets[0].data = [];
+            countChart.update('none');
+          }
+          return;
+        }
+        combined.sort((a, b) => a.x - b.x);
+        const key = countPeriodKey;
+        const dataPoints = aggregateCounts(combined, key, min, max);
+        if (!countChart) {
+          countChart = new Chart(countCtx, {
+            type: 'line',
+            data: {
+              datasets: [
+                {
+                  label: 'Datapoints',
+                  data: dataPoints,
+                  borderColor: 'rgba(34, 197, 94, 0.9)',
+                  backgroundColor: 'rgba(34, 197, 94, 0.25)',
+                  pointRadius: 1.6,
+                  pointHoverRadius: 3,
+                  borderWidth: 2,
+                  tension: 0,
+                  fill: true,
+                },
+              ],
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              animation: false,
+              parsing: false,
+              normalized: true,
+              scales: {
+                x: {
+                  type: 'time',
+                  grid: { color: 'rgba(255,255,255,0.06)' },
+                  ticks: { color: '#cbd5e1' },
+                },
+                y: {
+                  beginAtZero: true,
+                  grid: { color: 'rgba(255,255,255,0.06)' },
+                  ticks: { color: '#cbd5e1' },
+                },
+              },
+              plugins: {
+                legend: { labels: { color: '#e5e7eb' } },
+                tooltip: {
+                  callbacks: {
+                    label: (ctx) => `Count: ${ctx.parsed.y}`,
+                  },
+                },
+              },
+            },
+          });
+        }
+        countChart.data.datasets[0].data = dataPoints;
+        if (min != null && max != null) {
+          countChart.options.scales.x.min = min;
+          countChart.options.scales.x.max = max;
+        } else {
+          if (countChart.options && countChart.options.scales && countChart.options.scales.x) {
+            delete countChart.options.scales.x.min;
+            delete countChart.options.scales.x.max;
+          }
+        }
+        countChart.update('none');
+      }
+
+      if (periodButtons) {
+        periodButtons.addEventListener('click', (e) => {
+          const t = e.target;
+          if (t && t.matches && t.matches('.range-btn')) {
+            const key = t.getAttribute('data-period');
+            countPeriodKey = key;
+            // toggle active
+            const btns = periodButtons.querySelectorAll('.range-btn');
+            btns.forEach(b => b.classList.remove('active'));
+            t.classList.add('active');
+            updateCountChart(currentRange.min, currentRange.max);
+          }
+        });
+      }
+
+      if (seriesToggles) {
+        seriesToggles.addEventListener('click', (e) => {
+          const t = e.target;
+          if (!chart || !miniChart) return;
+          if (t && t.matches && t.matches('button[data-series-index]')) {
+            const idx = Number(t.getAttribute('data-series-index'));
+            seriesVisibility[idx] = !seriesVisibility[idx];
+            if (seriesVisibility[idx]) t.classList.add('active'); else t.classList.remove('active');
+            if (chart.data && chart.data.datasets[idx]) {
+              chart.data.datasets[idx].hidden = !seriesVisibility[idx];
+            }
+            if (miniChart.data && miniChart.data.datasets[idx]) {
+              miniChart.data.datasets[idx].hidden = !seriesVisibility[idx];
+            }
+            chart.update('none');
+            miniChart.update('none');
+            updateCountChart(currentRange.min, currentRange.max);
+          }
+        });
+      }
+
+      // Auto-render initial placeholder
+      handleRender();
+    </script>
+  </body>
+  </html>
+
