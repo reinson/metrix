@@ -175,6 +175,7 @@
             <div class="range-buttons" id="seriesToggles">
               <span class="hint">Series:</span>
             </div>
+            <div id="filterCounts" class="hint" style="flex:1; text-align:center;">0</div>
             <div class="range-buttons" id="rangeButtons">
               <span class="hint">Filter:</span>
               <button class="range-btn" data-range="1m">1m</button>
@@ -211,6 +212,21 @@
         </div>
         <canvas id="countCanvas" style="height: 100%;"></canvas>
       </div>
+      
+      <div class="panel" style="height: 240px;">
+        <div class="hint" style="margin-bottom:6px;">Month of year</div>
+        <canvas id="monthCanvas" style="height: 100%;"></canvas>
+      </div>
+
+      <div class="panel" style="height: 240px;">
+        <div class="hint" style="margin-bottom:6px;">Weekday counts (Mon–Sun)</div>
+        <canvas id="weekdayCanvas" style="height: 100%;"></canvas>
+      </div>
+
+      <div class="panel" style="height: 240px;">
+        <div class="hint" style="margin-bottom:6px;">Hour of day (0–23)</div>
+        <canvas id="hourCanvas" style="height: 100%;"></canvas>
+      </div>
     </div>
 
     <!-- Chart.js + date adapter + zoom plugin -->
@@ -229,6 +245,10 @@
       const navCtx = document.getElementById('navCanvas').getContext('2d');
       const periodButtons = document.getElementById('periodButtons');
       const countCtx = document.getElementById('countCanvas')?.getContext('2d');
+      const monthCtx = document.getElementById('monthCanvas')?.getContext('2d');
+      const weekdayCtx = document.getElementById('weekdayCanvas')?.getContext('2d');
+      const hourCtx = document.getElementById('hourCanvas')?.getContext('2d');
+      const filterCountsEl = document.getElementById('filterCounts');
 
       /** @type {Chart | null} */
       let chart = null;
@@ -236,6 +256,12 @@
       let miniChart = null;
       /** @type {Chart | null} */
       let countChart = null;
+      /** @type {Chart | null} */
+      let monthChart = null;
+      /** @type {Chart | null} */
+      let weekdayChart = null;
+      /** @type {Chart | null} */
+      let hourChart = null;
 
       /** @type {{x:number,y:number}[][]} */
       let rawSeries = [];
@@ -380,6 +406,7 @@
                   if (chart) chart.update('none');
                   if (miniChart) miniChart.update('none');
                   updateCountChart(currentRange.min, currentRange.max);
+                  updateFilterCounts();
                 },
               },
               tooltip: {
@@ -506,6 +533,7 @@
           buildSeriesToggles(seriesList.map((_, i) => seriesLabels[i] || `Series ${i + 1}`));
           renderChart(seriesList);
           updateCountChart();
+          updateFilterCounts();
         } catch (err) {
           showError(err.message || String(err));
         }
@@ -541,6 +569,7 @@
         }
         currentRange = { min, max };
         updateCountChart(min, max);
+        updateFilterCounts();
         setActiveRangeButton(''); // clear active; will be set by preset clicks
       }
 
@@ -614,6 +643,7 @@
             setActiveRangeButton('all');
             currentRange = { min: undefined, max: undefined };
             updateCountChart();
+            updateFilterCounts();
             return;
         }
         setLinkedRange(min, max);
@@ -690,22 +720,30 @@
       }
 
       function updateCountChart(min, max) {
-        if (!rawSeries || rawSeries.length === 0 || !countCtx) return;
+        if (!rawSeries || rawSeries.length === 0) {
+          updateMonthChart([], min, max);
+          updateWeekdayChart([], min, max);
+          updateHourChart([], min, max);
+          return;
+        }
         // Combine only visible series
         const combined = rawSeries
           .flatMap((series, i) => (seriesVisibility[i] === false ? [] : series));
         if (combined.length === 0) {
-          // nothing visible; just clear
+          // keep count chart empty, but still update fixed-length bar charts with zeros
           if (countChart) {
             countChart.data.datasets[0].data = [];
             countChart.update('none');
           }
+          updateMonthChart([], min, max);
+          updateWeekdayChart([], min, max);
+          updateHourChart([], min, max);
           return;
         }
         combined.sort((a, b) => a.x - b.x);
         const key = countPeriodKey;
         const dataPoints = aggregateCounts(combined, key, min, max);
-        if (!countChart) {
+        if (countCtx && !countChart) {
           countChart = new Chart(countCtx, {
             type: 'line',
             data: {
@@ -752,17 +790,171 @@
             },
           });
         }
-        countChart.data.datasets[0].data = dataPoints;
-        if (min != null && max != null) {
-          countChart.options.scales.x.min = min;
-          countChart.options.scales.x.max = max;
-        } else {
-          if (countChart.options && countChart.options.scales && countChart.options.scales.x) {
-            delete countChart.options.scales.x.min;
-            delete countChart.options.scales.x.max;
+        if (countChart) {
+          countChart.data.datasets[0].data = dataPoints;
+          if (min != null && max != null) {
+            countChart.options.scales.x.min = min;
+            countChart.options.scales.x.max = max;
+          } else {
+            if (countChart.options && countChart.options.scales && countChart.options.scales.x) {
+              delete countChart.options.scales.x.min;
+              delete countChart.options.scales.x.max;
+            }
+          }
+          countChart.update('none');
+        }
+
+        // Update additional summary charts using same filtered range
+        updateMonthChart(combined, min, max);
+        updateWeekdayChart(combined, min, max);
+        updateHourChart(combined, min, max);
+      }
+
+      function updateMonthChart(combined, min, max) {
+        if (!monthCtx) return;
+        const brand = getComputedStyle(document.documentElement).getPropertyValue('--brand').trim() || '#3b82f6';
+        const brandWeak = getComputedStyle(document.documentElement).getPropertyValue('--brand-weak').trim() || 'rgba(59,130,246,0.18)';
+        const labels = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        const counts = new Array(12).fill(0);
+        if (combined && combined.length > 0) {
+          const rangeMin = (min != null) ? min : combined[0].x;
+          const rangeMax = (max != null) ? max : combined[combined.length - 1].x;
+          for (const p of combined) {
+            if (p.x < rangeMin || p.x > rangeMax) continue;
+            const m = new Date(p.x).getMonth();
+            counts[m] += 1;
           }
         }
-        countChart.update('none');
+        if (!monthChart) {
+          monthChart = new Chart(monthCtx, {
+            type: 'bar',
+            data: {
+              labels,
+              datasets: [{
+                label: 'Events by month',
+                data: counts,
+                backgroundColor: brandWeak,
+                borderColor: brand,
+                borderWidth: 1.5,
+              }],
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              animation: false,
+              normalized: true,
+              scales: {
+                x: { grid: { color: 'rgba(255,255,255,0.06)' }, ticks: { color: '#cbd5e1' } },
+                y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.06)' }, ticks: { color: '#cbd5e1' } },
+              },
+              plugins: {
+                legend: { display: false },
+                tooltip: { callbacks: { label: (ctx) => `Count: ${ctx.parsed.y}` } },
+              },
+            },
+          });
+        } else {
+          monthChart.data.labels = labels;
+          monthChart.data.datasets[0].data = counts;
+          monthChart.update('none');
+        }
+      }
+
+      function updateWeekdayChart(combined, min, max) {
+        if (!weekdayCtx) return;
+        const labels = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+        const counts = new Array(7).fill(0);
+        if (combined && combined.length > 0) {
+          const rangeMin = (min != null) ? min : combined[0].x;
+          const rangeMax = (max != null) ? max : combined[combined.length - 1].x;
+          for (const p of combined) {
+            if (p.x < rangeMin || p.x > rangeMax) continue;
+            const day = new Date(p.x).getDay(); // 0..6, Sun..Sat
+            const idx = (day + 6) % 7; // Mon=0
+            counts[idx] += 1;
+          }
+        }
+        if (!weekdayChart) {
+          weekdayChart = new Chart(weekdayCtx, {
+            type: 'bar',
+            data: {
+              labels,
+              datasets: [{
+                label: 'Events by weekday',
+                data: counts,
+                backgroundColor: 'rgba(234,179,8,0.25)',
+                borderColor: 'rgba(234,179,8,1)',
+                borderWidth: 1.5,
+              }],
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              animation: false,
+              normalized: true,
+              scales: {
+                x: { grid: { color: 'rgba(255,255,255,0.06)' }, ticks: { color: '#cbd5e1' } },
+                y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.06)' }, ticks: { color: '#cbd5e1' } },
+              },
+              plugins: {
+                legend: { display: false },
+                tooltip: { callbacks: { label: (ctx) => `Count: ${ctx.parsed.y}` } },
+              },
+            },
+          });
+        } else {
+          weekdayChart.data.labels = labels;
+          weekdayChart.data.datasets[0].data = counts;
+          weekdayChart.update('none');
+        }
+      }
+
+      function updateHourChart(combined, min, max) {
+        if (!hourCtx) return;
+        const labels = Array.from({ length: 24 }, (_, i) => String(i));
+        const counts = new Array(24).fill(0);
+        if (combined && combined.length > 0) {
+          const rangeMin = (min != null) ? min : combined[0].x;
+          const rangeMax = (max != null) ? max : combined[combined.length - 1].x;
+          for (const p of combined) {
+            if (p.x < rangeMin || p.x > rangeMax) continue;
+            const h = new Date(p.x).getHours();
+            counts[h] += 1;
+          }
+        }
+        if (!hourChart) {
+          hourChart = new Chart(hourCtx, {
+            type: 'bar',
+            data: {
+              labels,
+              datasets: [{
+                label: 'Events by hour',
+                data: counts,
+                backgroundColor: 'rgba(167,139,250,0.25)',
+                borderColor: 'rgba(167,139,250,1)',
+                borderWidth: 1.5,
+              }],
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              animation: false,
+              normalized: true,
+              scales: {
+                x: { grid: { color: 'rgba(255,255,255,0.06)' }, ticks: { color: '#cbd5e1' } },
+                y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.06)' }, ticks: { color: '#cbd5e1' } },
+              },
+              plugins: {
+                legend: { display: false },
+                tooltip: { callbacks: { label: (ctx) => `Count: ${ctx.parsed.y}` } },
+              },
+            },
+          });
+        } else {
+          hourChart.data.labels = labels;
+          hourChart.data.datasets[0].data = counts;
+          hourChart.update('none');
+        }
       }
 
       if (periodButtons) {
@@ -797,12 +989,31 @@
             chart.update('none');
             miniChart.update('none');
             updateCountChart(currentRange.min, currentRange.max);
+            updateFilterCounts();
           }
         });
       }
 
       // Auto-render initial placeholder
       handleRender();
+      
+      function updateFilterCounts() {
+        if (!filterCountsEl) return;
+        // Consider only visible series
+        const visiblePoints = rawSeries
+          .flatMap((series, i) => (seriesVisibility[i] === false ? [] : series));
+        const total = visiblePoints.length;
+        const hasRange = currentRange.min != null && currentRange.max != null;
+        if (!hasRange) {
+          filterCountsEl.textContent = `Total count: ${total}`;
+          return;
+        }
+        let shown = 0;
+        for (const p of visiblePoints) {
+          if (p.x >= currentRange.min && p.x <= currentRange.max) shown += 1;
+        }
+        filterCountsEl.textContent = `${shown} of ${total}`;
+      }
     </script>
   </body>
   </html>
